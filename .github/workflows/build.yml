@@ -372,9 +372,10 @@ jobs:
         cp "$SRC_DIR/g_audio.ko" "$GITHUB_WORKSPACE/AnyKernel3/modules/data/adb/lkm/"
 
     - name: Copy emulator virtio modules
-      if: ${{ inputs.variant == 'Emulator' }}
+      if: ${{ inputs.variant == 'Emulator' && (steps.parse.outputs.kernel_version == '6.6' || steps.parse.outputs.kernel_version == '6.12') }}
       run: |
         # Replace stock emulator .ko files with versions built from this source tree.
+        # Only 6.6+ kernels produce these as modules; older versions rely on CFI_PERMISSIVE.
         # Stock modules have mismatched CFI type hashes; ours match the kernel Image exactly.
         mkdir -p "$GITHUB_WORKSPACE/AnyKernel3/modules/data/adb/lkm"
         sed -i 's|^do\.modules=.*|do.modules=1|' "$GITHUB_WORKSPACE/AnyKernel3/anykernel.sh"

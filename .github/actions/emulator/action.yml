@@ -35,7 +35,18 @@ runs:
         #   virtio_console — drivers/char/virtio_console.ko
         #   virtio_mmio   — drivers/virtio/virtio_mmio.ko
         #   virtio_pci    — drivers/virtio/virtio_pci.ko
-        cat >> "${{ github.workspace }}/wild_gki.fragment" << 'EOF'
+        # Module registration + fragment only for 6.6+ kernels.
+        #
+        # Older kernels (5.10/5.15/6.1) have these virtio configs as protected =y:
+        #   - 5.15: adding to gki_aarch64_modules causes modules.order mismatch
+        #   - 6.1:  _COMMON_GKI_MODULES_LIST is shared with rockpi4 which already
+        #           declares these → Kleaf filegroup name conflict
+        # For those versions CONFIG_CFI_PERMISSIVE=y (in configure-kernel) is sufficient.
+
+        if [[ "${{ inputs.kernel_version }}" == "6.6" || "${{ inputs.kernel_version }}" == "6.12" ]]; then
+          echo "6.6+ kernel — applying virtio module fragment + registration"
+
+          cat >> "${{ github.workspace }}/wild_gki.fragment" << 'EOF'
         # Force virtio drivers as modules so we produce .ko files with matching CFI hashes
         CONFIG_VIRTIO_BLK=m
         CONFIG_VIRTIO_CONSOLE=m
@@ -43,59 +54,44 @@ runs:
         CONFIG_VIRTIO_PCI=m
         EOF
 
-        # Determine which module list key this kernel uses
-        if [[ "${{ inputs.android_version }}" == "android14" && "${{ inputs.kernel_version }}" == "5.15" && ${{ inputs.sublevel }} -le 110 && "${{ inputs.os_patch_level }}" != "2023-09" ]] \
-        || [[ "${{ inputs.android_version }}" == "android14" && "${{ inputs.kernel_version }}" == "6.1"  && ${{ inputs.sublevel }} -le 25  && "${{ inputs.os_patch_level }}" != "2023-09" ]]; then
-          LIST_KEY="COMMON_GKI_MODULES_LIST"
-        else
-          LIST_KEY="_COMMON_GKI_MODULES_LIST"
-        fi
+          MODULES=(
+            "drivers/block/virtio_blk.ko"
+            "drivers/char/virtio_console.ko"
+            "drivers/virtio/virtio_mmio.ko"
+            "drivers/virtio/virtio_pci.ko"
+          )
 
-        # Modules to register + their source-tree paths
-        declare -A MODULES=(
-          ["drivers/block/virtio_blk.ko"]="virtio_blk"
-          ["drivers/char/virtio_console.ko"]="virtio_console"
-          ["drivers/virtio/virtio_mmio.ko"]="virtio_mmio"
-          ["drivers/virtio/virtio_pci.ko"]="virtio_pci"
-        )
-
-        for KO_PATH in "${!MODULES[@]}"; do
-          KO_NAME="${MODULES[$KO_PATH]}"
-
-          # Register in flat module list (legacy build path)
-          if ! grep -qF "$KO_PATH" common/android/gki_aarch64_modules 2>/dev/null; then
-            echo "$KO_PATH" >> common/android/gki_aarch64_modules
-            echo "  + gki_aarch64_modules: $KO_PATH"
-          else
-            echo "  ~ already in gki_aarch64_modules: $KO_PATH"
-          fi
-
-          # Register in modules.bzl (Bazel build path)
-          if [[ -f common/modules.bzl ]]; then
-            if ! grep -qF "\"${KO_PATH}\"" common/modules.bzl; then
-              sed -i "/${LIST_KEY} = \[/,/^[[:space:]]*\]/{/^[[:space:]]*\]$/i\\    \"${KO_PATH}\",
-              }" common/modules.bzl
-              echo "  + modules.bzl: $KO_PATH"
+          for KO_PATH in "${MODULES[@]}"; do
+            # Register in flat module list (legacy build.sh path)
+            if ! grep -qF "$KO_PATH" common/android/gki_aarch64_modules 2>/dev/null; then
+              echo "$KO_PATH" >> common/android/gki_aarch64_modules
+              echo "  + gki_aarch64_modules: $KO_PATH"
             else
-              echo "  ~ already in modules.bzl: $KO_PATH"
+              echo "  ~ already in gki_aarch64_modules: $KO_PATH"
             fi
-          fi
-        done
 
-        # Verify all four are present in modules.bzl
-        if [[ -f common/modules.bzl ]]; then
-          MISSING=0
-          for KO_PATH in "${!MODULES[@]}"; do
-            if ! grep -qF "\"${KO_PATH}\"" common/modules.bzl; then
-              echo "✗ Missing from modules.bzl: $KO_PATH"
-              MISSING=1
+            # Register in modules.bzl (Bazel/Kleaf path)
+            if [[ -f common/modules.bzl ]]; then
+              if ! grep -qF "\"${KO_PATH}\"" common/modules.bzl; then
+                sed -i "/_COMMON_GKI_MODULES_LIST = \[/,/^[[:space:]]*\]/{/^[[:space:]]*\]$/i\\    \"${KO_PATH}\",
+                }" common/modules.bzl
+                echo "  + modules.bzl: $KO_PATH"
+              else
+                echo "  ~ already in modules.bzl: $KO_PATH"
+              fi
             fi
           done
-          if [[ "$MISSING" -eq 0 ]]; then
-            echo "✓ All emulator virtio modules registered in modules.bzl"
-          else
-            exit 1
+
+          if [[ -f common/modules.bzl ]]; then
+            MISSING=0
+            for KO_PATH in "${MODULES[@]}"; do
+              grep -qF "\"${KO_PATH}\"" common/modules.bzl || { echo "✗ Missing: $KO_PATH"; MISSING=1; }
+            done
+            [[ "$MISSING" -eq 0 ]] && echo "✓ All virtio modules registered in modules.bzl" || exit 1
           fi
+
+        else
+          echo "${{ inputs.kernel_version }} kernel — skipping virtio module registration (CFI_PERMISSIVE covers this)"
         fi
 
         # ABI bypass — adding modules outside the original ABI stubs list
