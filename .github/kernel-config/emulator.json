@@ -1,5 +1,9 @@
 {
   "include": [
-    {"kernel_version": "6.6.30-android15-2024-07", "variant": "Emulator"}
+    {"kernel_version": "5.10.66-android12-2022-01",  "variant": "Emulator"},
+    {"kernel_version": "5.15.119-android13-2023-09", "variant": "Emulator"},
+    {"kernel_version": "6.1.25-android14-2023-06",   "variant": "Emulator"},
+    {"kernel_version": "6.6.30-android15-2024-07",   "variant": "Emulator"},
+    {"kernel_version": "6.6.66-android15-2025-02",   "variant": "Emulator"}
   ]
 }
