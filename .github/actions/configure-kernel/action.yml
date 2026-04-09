@@ -48,8 +48,7 @@ runs:
         CONFIG_IP_SET_LIST_SET=y
         # Emulator virtio support (built-in for ranchu)
         CONFIG_VIRTIO_BLK=m
-        # Disable CFI to allow loading out-of-tree modules
-        # CONFIG_CFI_CLANG is not set
+        CONFIG_CFI_PERMISSIVE=y
         EOF
 
     - name: Apply Kernel Config for 5.10
