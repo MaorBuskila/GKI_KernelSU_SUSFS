@@ -22,16 +22,18 @@ runs:
       shell: bash
       working-directory: ${{ github.workspace }}/kernel
       run: |
-        # These modules are already =m in GKI gki_defconfig, so no fragment changes needed
-        # for them.  We just need to ensure Bazel includes them in the dist output so we
-        # can replace the stock emulator .ko files (which have mismatched CFI type hashes)
-        # with versions compiled from this exact source tree.
+        # virtio_blk/console/mmio/pci are already CONFIG_xxx=m in GKI gki_defconfig.
+        # No fragment changes needed — adding them would either be a no-op or fail
+        # Kleaf's post-olddefconfig validation if deps aren't met.
+        # We only need to register them in the dist output lists so Bazel copies them
+        # into the artifact, letting us replace the stock emulator .ko files (which were
+        # compiled from a different tree and have mismatched CFI type hashes).
         #
-        # Full list of CFI-violating modules observed in boot log:
-        #   virtio_blk    — block device (drivers/block/virtio_blk.ko)
-        #   virtio_console — serial console (drivers/char/virtio_console.ko)
-        #   virtio_mmio   — MMIO bus transport (drivers/virtio/virtio_mmio.ko)
-        #   virtio_pci    — PCI bus transport (drivers/virtio/virtio_pci.ko)
+        # CFI-violating modules from boot log:
+        #   virtio_blk    — drivers/block/virtio_blk.ko
+        #   virtio_console — drivers/char/virtio_console.ko
+        #   virtio_mmio   — drivers/virtio/virtio_mmio.ko
+        #   virtio_pci    — drivers/virtio/virtio_pci.ko
 
         # Determine which module list key this kernel uses
         if [[ "${{ inputs.android_version }}" == "android14" && "${{ inputs.kernel_version }}" == "5.15" && ${{ inputs.sublevel }} -le 110 && "${{ inputs.os_patch_level }}" != "2023-09" ]] \

@@ -49,9 +49,6 @@ runs:
         # CFI: cannot disable in GKI (protected config) — permissive demotes panics to warnings
         # while the Emulator variant rebuilds all virtio .ko files from this tree for a clean fix
         CONFIG_CFI_PERMISSIVE=y
-        # Build emulator BT modules from this tree so CFI type hashes match stock .ko files
-        CONFIG_BT=m
-        CONFIG_BT_VHCI=m
         EOF
 
     - name: Apply Kernel Config for 5.10
