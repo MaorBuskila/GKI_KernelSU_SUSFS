@@ -28,6 +28,7 @@ on:
           - custom
           - testing
           - bypass
+          - emulator
         default: custom
       feature_set:
         description: "Feature Set"
@@ -203,6 +204,19 @@ jobs:
     uses: ./.github/workflows/prepare.yml
     with:
       config_file: .github/kernel-config/bypass.json
+      ksu_commit: ${{ inputs.ksu_commit || needs.fetch-commits.outputs.ksu_commit }}
+      anykernel_commit: ${{ needs.fetch-commits.outputs.anykernel_commit }}
+      patches_commit: ${{ needs.fetch-commits.outputs.patches_commit }}
+      susfs_commit: ${{ needs.fetch-commits.outputs.susfs_commit }}
+      feature_set: ${{ inputs.feature_set || 'WKSU+SUSFS+BBG' }}
+    secrets: inherit
+
+  build-emulator:
+    if: ${{ inputs.kernel_build_version == 'emulator' }}
+    needs: fetch-commits
+    uses: ./.github/workflows/prepare.yml
+    with:
+      config_file: .github/kernel-config/emulator.json
       ksu_commit: ${{ inputs.ksu_commit || needs.fetch-commits.outputs.ksu_commit }}
       anykernel_commit: ${{ needs.fetch-commits.outputs.anykernel_commit }}
       patches_commit: ${{ needs.fetch-commits.outputs.patches_commit }}

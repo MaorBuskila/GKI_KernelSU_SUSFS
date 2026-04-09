@@ -1,0 +1,99 @@
+name: 'Setup Emulator Modules'
+description: 'Build all ranchu virtio .ko files from source so CFI type hashes match the emulator'
+
+inputs:
+  android_version:
+    description: 'Android version (e.g., android15)'
+    required: true
+  kernel_version:
+    description: 'Kernel version (e.g., 6.6)'
+    required: true
+  sublevel:
+    description: 'Kernel sublevel'
+    required: true
+  os_patch_level:
+    description: 'OS patch level (e.g., 2024-07)'
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Configure Emulator Kernel Modules
+      shell: bash
+      working-directory: ${{ github.workspace }}/kernel
+      run: |
+        # These modules are already =m in GKI gki_defconfig, so no fragment changes needed
+        # for them.  We just need to ensure Bazel includes them in the dist output so we
+        # can replace the stock emulator .ko files (which have mismatched CFI type hashes)
+        # with versions compiled from this exact source tree.
+        #
+        # Full list of CFI-violating modules observed in boot log:
+        #   virtio_blk    — block device (drivers/block/virtio_blk.ko)
+        #   virtio_console — serial console (drivers/char/virtio_console.ko)
+        #   virtio_mmio   — MMIO bus transport (drivers/virtio/virtio_mmio.ko)
+        #   virtio_pci    — PCI bus transport (drivers/virtio/virtio_pci.ko)
+
+        # Determine which module list key this kernel uses
+        if [[ "${{ inputs.android_version }}" == "android14" && "${{ inputs.kernel_version }}" == "5.15" && ${{ inputs.sublevel }} -le 110 && "${{ inputs.os_patch_level }}" != "2023-09" ]] \
+        || [[ "${{ inputs.android_version }}" == "android14" && "${{ inputs.kernel_version }}" == "6.1"  && ${{ inputs.sublevel }} -le 25  && "${{ inputs.os_patch_level }}" != "2023-09" ]]; then
+          LIST_KEY="COMMON_GKI_MODULES_LIST"
+        else
+          LIST_KEY="_COMMON_GKI_MODULES_LIST"
+        fi
+
+        # Modules to register + their source-tree paths
+        declare -A MODULES=(
+          ["drivers/block/virtio_blk.ko"]="virtio_blk"
+          ["drivers/char/virtio_console.ko"]="virtio_console"
+          ["drivers/virtio/virtio_mmio.ko"]="virtio_mmio"
+          ["drivers/virtio/virtio_pci.ko"]="virtio_pci"
+        )
+
+        for KO_PATH in "${!MODULES[@]}"; do
+          KO_NAME="${MODULES[$KO_PATH]}"
+
+          # Register in flat module list (legacy build path)
+          if ! grep -qF "$KO_PATH" common/android/gki_aarch64_modules 2>/dev/null; then
+            echo "$KO_PATH" >> common/android/gki_aarch64_modules
+            echo "  + gki_aarch64_modules: $KO_PATH"
+          else
+            echo "  ~ already in gki_aarch64_modules: $KO_PATH"
+          fi
+
+          # Register in modules.bzl (Bazel build path)
+          if [[ -f common/modules.bzl ]]; then
+            if ! grep -qF "\"${KO_PATH}\"" common/modules.bzl; then
+              sed -i "/${LIST_KEY} = \[/,/^[[:space:]]*\]/{/^[[:space:]]*\]$/i\\    \"${KO_PATH}\",
+              }" common/modules.bzl
+              echo "  + modules.bzl: $KO_PATH"
+            else
+              echo "  ~ already in modules.bzl: $KO_PATH"
+            fi
+          fi
+        done
+
+        # Verify all four are present in modules.bzl
+        if [[ -f common/modules.bzl ]]; then
+          MISSING=0
+          for KO_PATH in "${!MODULES[@]}"; do
+            if ! grep -qF "\"${KO_PATH}\"" common/modules.bzl; then
+              echo "✗ Missing from modules.bzl: $KO_PATH"
+              MISSING=1
+            fi
+          done
+          if [[ "$MISSING" -eq 0 ]]; then
+            echo "✓ All emulator virtio modules registered in modules.bzl"
+          else
+            exit 1
+          fi
+        fi
+
+        # ABI bypass — adding modules outside the original ABI stubs list
+        if [[ "${{ inputs.android_version }}" == "android12" && "${{ inputs.kernel_version }}" == "5.10" ]]; then
+          sed -i 's/^\s*exit 1$/    echo "Who Cares? Bypassing Now!"/' build/abi/compare_to_symbol_list
+        elif [[ "${{ inputs.android_version }}" == "android13" && "${{ inputs.kernel_version }}" == "5.10" ]] \
+          || [[ "${{ inputs.android_version }}" == "android13" && "${{ inputs.kernel_version }}" == "5.15" ]]; then
+          sed -i 's/^\s*exit 1$/    echo "Who Cares? Bypassing Now!"/' build/kernel/abi/compare_to_symbol_list
+        else
+          perl -i -pe 's/^(\s*)return 1$/$1print("Who Cares? Bypassing Now!")\n$1return 0/g if /if missing_symbols:/../return 1/' build/kernel/abi/check_buildtime_symbol_protection.py
+        fi

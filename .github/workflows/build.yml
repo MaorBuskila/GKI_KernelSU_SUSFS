@@ -251,6 +251,15 @@ jobs:
         sublevel: ${{ steps.parse.outputs.sub_level }}
         os_patch_level: ${{ steps.parse.outputs.os_patch_level }}
 
+    - name: Setup Emulator
+      if: ${{ inputs.variant == 'Emulator' }}
+      uses: ./.github/actions/emulator
+      with:
+        android_version: ${{ steps.parse.outputs.android_version }}
+        kernel_version: ${{ steps.parse.outputs.kernel_version }}
+        sublevel: ${{ steps.parse.outputs.sub_level }}
+        os_patch_level: ${{ steps.parse.outputs.os_patch_level }}
+
     - name: Apply ABI Compare Bypass
       if: false
       working-directory: ${{ github.workspace }}/kernel
@@ -361,6 +370,37 @@ jobs:
 
         cp "$SRC_DIR/snd-aloop.ko" "$GITHUB_WORKSPACE/AnyKernel3/modules/data/adb/lkm/"
         cp "$SRC_DIR/g_audio.ko" "$GITHUB_WORKSPACE/AnyKernel3/modules/data/adb/lkm/"
+
+    - name: Copy emulator virtio modules
+      if: ${{ inputs.variant == 'Emulator' }}
+      run: |
+        # Replace stock emulator .ko files with versions built from this source tree.
+        # Stock modules have mismatched CFI type hashes; ours match the kernel Image exactly.
+        mkdir -p "$GITHUB_WORKSPACE/AnyKernel3/modules/data/adb/lkm"
+        sed -i 's|^do\.modules=.*|do.modules=1|' "$GITHUB_WORKSPACE/AnyKernel3/anykernel.sh"
+
+        if [[ "$ANDROID_VERSION" == "android12" || "$ANDROID_VERSION" == "android13" ]]; then
+          SRC_DIR="$GITHUB_WORKSPACE/kernel/out/$ANDROID_VERSION-$KERNEL_VERSION/dist"
+        else
+          SRC_DIR="$GITHUB_WORKSPACE/kernel/bazel-bin/common/kernel_aarch64"
+        fi
+
+        # Full set of CFI-violating virtio modules from boot log
+        EMULATOR_MODULES=(
+          virtio_blk.ko
+          virtio_console.ko
+          virtio_mmio.ko
+          virtio_pci.ko
+        )
+
+        for ko in "${EMULATOR_MODULES[@]}"; do
+          if [ -f "$SRC_DIR/$ko" ]; then
+            cp "$SRC_DIR/$ko" "$GITHUB_WORKSPACE/AnyKernel3/modules/data/adb/lkm/"
+            echo "✓ Copied $ko"
+          else
+            echo "✗ WARNING: $ko not found in $SRC_DIR"
+          fi
+        done
 
     - name: Scan and collect patch rejects
       id: scan
