@@ -1,0 +1,5 @@
+{
+  "include": [
+    {"kernel_version": "6.6.66-android15-2025-02", "variant": "NoTrimKsyms"}
+  ]
+}

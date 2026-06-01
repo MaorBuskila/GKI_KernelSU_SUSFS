@@ -328,6 +328,10 @@ jobs:
       working-directory: ${{ github.workspace }}/kernel
       run: |
         set -ex
+        NOTRIM_FLAG=""
+        if [[ "${{ inputs.variant }}" == "NoTrimKsyms" ]]; then
+          NOTRIM_FLAG="--notrim"
+        fi
         #make -C common mrproper
         if [ -f "build/build.sh" ]; then
           SKIP_MRPROPER=1 GKI_DEFCONFIG_FRAGMENT="$GITHUB_WORKSPACE/wild_gki.fragment" LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh || exit 1
@@ -335,9 +339,9 @@ jobs:
           # Copy fragment to kernel tree for bazel
           cp "$GITHUB_WORKSPACE/wild_gki.fragment" common/arch/arm64/configs/wild_gki.fragment
           if [[ "$ANDROID_VERSION" == "android14" ]]; then
-            tools/bazel build --config=fast --lto=thin --defconfig_fragment=//common:arch/arm64/configs/wild_gki.fragment //common:kernel_aarch64_dist || exit 1
+            tools/bazel build --config=fast --lto=thin $NOTRIM_FLAG --defconfig_fragment=//common:arch/arm64/configs/wild_gki.fragment //common:kernel_aarch64_dist || exit 1
           else
-            tools/bazel build --config=fast --lto=none --defconfig_fragment=//common:arch/arm64/configs/wild_gki.fragment //common:kernel_aarch64_dist || exit 1
+            tools/bazel build --config=fast --lto=none $NOTRIM_FLAG --defconfig_fragment=//common:arch/arm64/configs/wild_gki.fragment //common:kernel_aarch64_dist || exit 1
           fi
         fi
 

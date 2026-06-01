@@ -29,6 +29,7 @@ on:
           - testing
           - bypass
           - emulator
+          - no-trim-ksyms
         default: custom
       feature_set:
         description: "Feature Set"
@@ -212,11 +213,24 @@ jobs:
     secrets: inherit
 
   build-emulator:
-    if: ${{ inputs.kernel_build_version == 'emulator' }}
+    if: ${{ inputs.kernel_build_version == 'emulator' || inputs.kernel_build_version == 'all' || startsWith(github.ref, 'refs/tags/v') }}
     needs: fetch-commits
     uses: ./.github/workflows/prepare.yml
     with:
       config_file: .github/kernel-config/emulator.json
+      ksu_commit: ${{ inputs.ksu_commit || needs.fetch-commits.outputs.ksu_commit }}
+      anykernel_commit: ${{ needs.fetch-commits.outputs.anykernel_commit }}
+      patches_commit: ${{ needs.fetch-commits.outputs.patches_commit }}
+      susfs_commit: ${{ needs.fetch-commits.outputs.susfs_commit }}
+      feature_set: ${{ inputs.feature_set || 'WKSU+SUSFS+BBG' }}
+    secrets: inherit
+
+  build-no-trim-ksyms:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.kernel_build_version == 'no-trim-ksyms' }}
+    needs: fetch-commits
+    uses: ./.github/workflows/prepare.yml
+    with:
+      config_file: .github/kernel-config/no-trim-ksyms.json
       ksu_commit: ${{ inputs.ksu_commit || needs.fetch-commits.outputs.ksu_commit }}
       anykernel_commit: ${{ needs.fetch-commits.outputs.anykernel_commit }}
       patches_commit: ${{ needs.fetch-commits.outputs.patches_commit }}
@@ -242,6 +256,8 @@ jobs:
     - build-lts
     - build-testing
     - build-bypass
+    - build-emulator
+    - build-no-trim-ksyms
     steps:
     - name: Download Misc Artifacts
       uses: actions/download-artifact@v4
@@ -296,7 +312,10 @@ jobs:
 
   release:
     runs-on: ubuntu-latest
-    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.release_type != 'Actions') || startsWith(github.ref, 'refs/tags/v') }}
+    # always() prevents GitHub from auto-skipping this job when some needs are skipped
+    # (e.g. when only emulator or only bypass was selected — other build jobs are skipped)
+    # The Validate Selected Builds step enforces which jobs actually had to succeed.
+    if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.release_type != 'Actions') || startsWith(github.ref, 'refs/tags/v')) }}
     permissions:
       contents: write
     needs:
@@ -310,6 +329,7 @@ jobs:
     - build-lts
     - build-custom
     - build-bypass
+    - build-emulator
     - rej
 
     env:
@@ -352,6 +372,7 @@ jobs:
         check_selected "custom" "build-custom" "${{ needs.build-custom.result }}"
         check_selected "lts" "build-lts" "${{ needs.build-lts.result }}"
         check_selected "bypass" "build-bypass" "${{ needs.build-bypass.result }}"
+        check_selected "emulator" "build-emulator" "${{ needs.build-emulator.result }}"
 
         if [[ "$failed" -ne 0 ]]; then
           exit 1
